@@ -1,8 +1,10 @@
-# opticsbench_generate
+# opticsbench_user_defined_kernels
 Complementary framework for AROW ICCVW2023 to create user-defined aberations to measure robustness on image datasets or validation images based on Zernike optics descriptions (c) Patrick Müller 2020-2023 - licensed under GNU General Public license v3.
 
-notes:
+If you want to generate our pre-defined corruptions from OpticsBench please use our OpticsBench Github repository (https://github.com/PatMue/classification_robustness/tree/main/opticsbench) instead by simply typing: 
+> python benchmark.py --generate_datasets --database imagenet-1k_val  
 
+notes:
 pip install . 
 
 
