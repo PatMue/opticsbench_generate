@@ -5,7 +5,7 @@ Complementary framework for AROW ICCVW2023 to create user-defined aberations to 
 #### OpticsBench kernels:
 If you want to generate our **pre-defined corruptions from OpticsBench** please use our OpticsBench Github repository instead [classification_robustness/opticsbench](https://github.com/PatMue/classification_robustness/tree/main/opticsbench)
 
-The OpticsBench corruptions can be generated from [classification_robustness/opticsbench](https://github.com/PatMue/classification_robustness/tree/main/opticsbench) by simply following [classification_robustness/dataset-generation](https://github.com/PatMue/classification_robustness/tree/main?tab=readme-ov-file#dataset-generation):
+The OpticsBench corruptions can be generated from [classification_robustness/opticsbench](https://github.com/PatMue/classification_robustness/tree/main/opticsbench) by simply following [classification_robustness/dataset-generation](https://github.com/PatMue/classification_robustness/tree/main?tab=readme-ov-file#dataset-generation-generate-opticsbench-image-corruptions):
 ```
 python benchmark.py --generate_datasets --database imagenet-1k_val  
 ```
