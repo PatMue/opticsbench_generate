@@ -16,7 +16,7 @@ pip install .
 
 To create kernels from single Zernike Polynomials see the demo:
 ```
-python opticsbench_generate/psf_generator.py
+python opticsbenchgen/psf_generator.py
 ```
 
 
