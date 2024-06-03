@@ -14,6 +14,11 @@ python benchmark.py --generate_datasets --database imagenet-1k_val
 notes:
 pip install . 
 
+To create kernels from single Zernike Polynomials see the demo:
+```
+python opticsbench_generate/psf_simple.py
+```
+
 
 
 If you find this useful, please cite: 
