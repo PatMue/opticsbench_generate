@@ -6,31 +6,14 @@ from math import factorial as fact
 import logging
 
 import numpy as np
-from numba import jit # just-in-time-compile functionality
+from numba import jit
 
 logger = logging.getLogger(__name__)
-
-class ZernPoly: # note: this is modified from Paul Fricker's zernfun implementation in Matlab
-    """!
-    ZernPoly: Computes Zernike Polynomials for different conventions or indexing schemes
-    """
-    def __init__(self,n,m,rho,phi):
-        """!
-        Initialize the ZernPoly class object
-        """
-        self.n = n         # number of zernike polynomial
-        self.m = m
-        self.rho = rho         # polar coordinates
-        self.phi = phi
-
-        raise NotImplementedError
     
 
 def get_zemax_fringe_polynomials(rho,phi,jmax=15,skip_zero=True):
-    """! verified on 15.07.2022 (again,updated) -- Zemax polynomials 'fringe' """
-
+    """! verified on 15.07.2022+ -- Zemax polynomials 'fringe' """
     # Wyant --> Fringe
-
     Z = [] #print(f"rho: {rho.shape}, phi: {phi.shape}") --> n_points
     jmin = 2 if skip_zero else 1 # skip piston Fringe 1
     logger.debug(f"using {jmin} to {jmax+1} polynomials, " + f"rho: {rho.shape},phi: {phi.shape}")
@@ -132,4 +115,5 @@ def factorial_helper(n:int,f=1):
     for c in range(1,n+1):
         f *=c
     return f
+
 #EOF

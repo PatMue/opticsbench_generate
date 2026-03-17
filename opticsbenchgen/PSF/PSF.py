@@ -1,11 +1,10 @@
 """@package docstring
 Module PSF -- generate psf from zernike polynomials. 
 """
-# (c) Patrick Müller, 2020-2023
 import logging
 import copy
 
-from numba import jit # just-in-time-compile functionality
+from numba import jit
 import pyfftw
 import numpy as np
 from matplotlib.patches import Rectangle
@@ -13,10 +12,10 @@ from scipy import ndimage
 from PIL import Image as PIL_IMG
 
 
-if __package__.__contains__("opticsbenchgen"):
+if __package__ and "opticsbenchgen" in __package__:
     from opticsbenchgen.PSF.ZernPoly import ZernPoly,get_zemax_fringe_polynomials
-    import opticsbenchgen.PSF.geometry
     from opticsbenchgen.utils.utilities import get_crop, soft_plot_close
+    import opticsbenchgen.PSF.geometry
 else:
     from PSF.ZernPoly import ZernPoly,get_zemax_fringe_polynomials
     from utils.utilities import get_crop, soft_plot_close
@@ -30,7 +29,7 @@ def old_version(func):
     def fcn(*args, **kwargs):
         logger.info(f"(deprecation warning): The function {func.__name__} is deprecated." +\
             " See __doc__ for further infos. (experimental)")
-        func(*args, **kwargs)
+        return func(*args, **kwargs)
     return fcn
 
 
@@ -330,8 +329,8 @@ class PupilGen():
         Compute the cartesian coordinates from polar coordinates:
             @param[in] rho: [float] radius
             @param[in] phi_rad: [float] angle
-            @param[out] x: [np.float]
-            @param[out] y: [np.float]
+            @param[out] x: [float]
+            @param[out] y: [float]
         """
         if dt is None:
             dt = self.dxp
@@ -512,7 +511,7 @@ class PSF():
         self.W = np.zeros(self.pp.shape)
         for k,nn in enumerate(n):
             self.z = ZernPoly.zernike_fun(int(nn),int(m[k]),self.rho[self.pp_mask],self.phi[self.pp_mask])
-            self.W[self.pp_mask] += np.float(coeff[k])*self.z
+            self.W[self.pp_mask] += float(coeff[k])*self.z
 
 
     def get_coefficients_for_current_position(self,x:float,y:float,\
@@ -557,19 +556,13 @@ class PSF():
         return  np.array([f.__call__(y,x) for f in self.interpolation_functions])
 
 
-    #@jit(forceobj=True) # use this to optimize code, check runtime behaviour before and after
     def getPSF(self,showWarning=True):
         """!
         Deprecated.
         """
-        # show only if not airy disk generated
         if showWarning:
             print('deprecated: call getPSF_using_pyfftw() is much faster')
-        # comment: number of elements remain the same when applying fourier transform
-        ########################################################
-        # complex pupil function, given in polar coordinates
         P = np.multiply(self.pp,np.exp(-1j*(+2)*np.pi*self.W))
-        ########################################################
         self.PSF = np.abs(np.fft.fftshift(np.fft.fft2(P),axes=None)*self.df**2)**2
         self.PSF = self.PSF/self.PSF.sum()
 
@@ -773,7 +766,7 @@ def binning_for_cupy(PSF_cpu:np.ndarray,pp_cpu:np.ndarray,scaling_factor:float=N
 
 
 #for speeding up the below code execution by 2-3 times:
-#@jit(nopython=True)
+#@jit(nopython=True) # TODO: not working here. 
 def multiply_helper(pp:np.ndarray,W:np.ndarray,wave:float=None):
     """!
     Create complex wavefront function (2D)
@@ -786,7 +779,7 @@ def multiply_helper(pp:np.ndarray,W:np.ndarray,wave:float=None):
     return np.multiply(pp,np.exp(-1j*(+2*np.pi/wave)*W)) # -1j according to Fringe convention
 
 
-@jit(forceobj=True) # nopython not possible
+#@jit(forceobj=True) # nopython not possible
 def normalize_helper(psf:np.ndarray):
     """! Normalize the psf."""
     return psf/np.sum(np.sum(psf)) # normalize to 1 (energy norm, l1)
@@ -810,8 +803,6 @@ def get_fft2_helper(pyfftwObj,complex_pupil_array):
 def get_normed_coordinate(yy,center):
     """! valid formula for both xx,yy"""
     return 2*(yy/(2*center-1)) -1
-#EOF
-
 
 
 def get_zernike_ordering_nm_helper(j_max=15,ordering="Fringe",skip_zero=True,verbose=False):
@@ -821,7 +812,6 @@ def get_zernike_ordering_nm_helper(j_max=15,ordering="Fringe",skip_zero=True,ver
     @param[out] nm: list of Zernike polynomials ordered with respect to selected indexing scheme
     @param[out] coeff: list of zeros matching the number of coefficients (for dummy values, Airy)
     """
-    # (c) Patrick Müller, 2021-2023
     nm = []
     n = 0
     next_coeff = True
@@ -848,11 +838,15 @@ def get_zernike_ordering_nm_helper(j_max=15,ordering="Fringe",skip_zero=True,ver
             if m == 0:
                 return pow(n/2 + 1,2) # print("m is zero at: " + str((n,m)))
             return pow((n+abs(m))/2 + 1,2) - 2*abs(m) + (1-np.sign(m))/2 # Fringe indexing scheme
-        logger.info("Fringe convention used")
+
         nm,coeff = get_zernike_ordering_nm_helper(pow(j_max,2),ordering="OSA/ANSI")
+
+        logger.info("Fringe convention used")
         logger.debug("nm tuple list (n,m) sorted following OSA/ANSI standard: " + str(nm) +"\n")
         logger.debug("idx: " + str([get_fringe_idx(elem) for elem in nm]) + "\n")
+
         nm.sort(key=get_fringe_idx) # sort array according to Fringe formula
+
         if skip_zero:
             nm = nm[0:j_max-1] # truncate to j_max polynomials after finished computations
         else:
@@ -861,9 +855,11 @@ def get_zernike_ordering_nm_helper(j_max=15,ordering="Fringe",skip_zero=True,ver
     elif ordering in "Wyant":
         # j_Fringe-1 --> j_max = j_max -1
         nm,coeff = get_zernike_ordering_nm_helper(j_max=j_max-1,ordering="Fringe")
-        logger.info("Wyant indexing is the same as Fringe ordering except subtracting such " + \
-            "that j_wyant = j_Fringe - 1 --> j_max_Wyant = j_max_Fringe -1")
+        logger.info("Wyant indexing: same as Fringe ordering except: " + \
+            "j_wyant = j_fringe - 1, j_max_wyant = j_max_fringe -1")
     elif ordering in "Noll":
         logger.error("Noll indexing scheme used: option not implemented yet")
     coeff = list(np.zeros(len(nm)))
     return nm,coeff
+
+#EOF

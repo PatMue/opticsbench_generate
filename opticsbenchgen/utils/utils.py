@@ -75,5 +75,18 @@ def test(sz=104):
         plt.close()
 
 
+def visualize_results(psf=None,pupil=None,coeff=None):
+    """!"""
+    if pupil is not None:
+        plt.imshow(pupil)
+        plt.title("Pupil simulation")
+        soft_plot_close()
+    if psf is not None:
+        plt.imshow(psf)
+        if coeff is not None:
+            plt.title(f"coeff: {coeff}, Fringe: {coeff+1}, l1 [10^-3]: {np.round(np.einsum('ij ->',psf)*1e3,5)}")
+        soft_plot_close()
+
+
 if __name__ == "__main__":	
    test()

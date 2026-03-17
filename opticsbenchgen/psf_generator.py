@@ -10,9 +10,10 @@ from skimage import transform
 import numpy as np
 
 
-if __package__ is not None and __package__.__contains__('opticsbenchgen'):
+if __package__ and 'opticsbenchgen' in __package__:
     from opticsbenchgen.PSF.PSF import PSF
     from opticsbenchgen.PSF.PSF import get_zernike_ordering_nm_helper 
+    from opticsbenchgen.utils.utils import soft_plot_close, visualize_results
 else:
     from PSF.PSF import PSF
 
@@ -118,19 +119,6 @@ def evaluate_psf(psf_simple,coeffs):
     return psf_simple
 
 
-def visualize_results(psf=None,pupil=None,coeff=None):
-    """!"""
-    if pupil is not None:
-        plt.imshow(pupil)
-        plt.title("Pupil simulation")
-        soft_plot_close()
-    if psf is not None:
-        plt.imshow(psf)
-        if coeff is not None:
-            plt.title(f"coeff: {coeff}, Fringe: {coeff+1}, l1 [10^-3]: {np.round(np.einsum('ij ->',psf)*1e3,5)}")
-        soft_plot_close()
-
-
 def initialize_simple_psf(j_max=20,sz=25,camera_data=None,skip_zero=True):
     """!"""
     if camera_data is None:
@@ -150,14 +138,6 @@ def initialize_simple_psf(j_max=20,sz=25,camera_data=None,skip_zero=True):
     logger.debug(f"coeffs ({coeffs.shape})")
     psf_simple.crop_to_size = (sz,sz)
     return psf_simple, coeffs
-
-
-def soft_plot_close(close=True):
-    """!"""
-    plt.show(block=False)
-    input()
-    if close:
-        plt.close()
 
 
 if __name__ == "__main__":

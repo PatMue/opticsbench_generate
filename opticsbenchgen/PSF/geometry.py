@@ -1,24 +1,19 @@
 # adapted and slightly modified from https://github.com/spacetelescope/poppy/blob/develop/poppy/geometry.py 
 # by Patrick Müller 2023
-
-
-#  Functions for reasonably exact geometry on discrete arrays
-#  These codes allow you to calculate circles and other such
-#  shapes discretized onto arrays with proper handling of areas
-#  at subpixel precision. (or at least reasonably proper; no
-#  guarantees for utter mathematical exactness at machine precision.)
+# Functions for reasonably exact geometry on discrete arrays
+# These codes allow you to calculate circles and other such
+# shapes discretized onto arrays with proper handling of areas
+# at subpixel precision. (or at least reasonably proper; no
+# guarantees for utter mathematical exactness at machine precision.)
+# original code in pixwt.c by Marc Buie
+# See http://www.boulder.swri.edu/~buie/idl/downloads/custom/32bit/pixwt.c
+# ported to pixwt.pro (IDL) by Doug Loucks, Lowell Observatory, 1992 Sep
+# subsequently ported to python by Michael Fitzgerald, 2007-10-16
+# LLNL / UCLA
 
 import numpy as np
 import logging
 _log = logging.getLogger('poppy')
-
-# original code in pixwt.c by Marc Buie
-#    See http://www.boulder.swri.edu/~buie/idl/downloads/custom/32bit/pixwt.c
-#
-# ported to pixwt.pro (IDL) by Doug Loucks, Lowell Observatory, 1992 Sep
-#
-# subsequently ported to python by Michael Fitzgerald, 2007-10-16
-# LLNL / UCLA
 
 
 def get_anti_aliased_pupil(shape,dt,radius,_use_gray_pixel=True):
@@ -36,7 +31,7 @@ def get_anti_aliased_pupil(shape,dt,radius,_use_gray_pixel=True):
         pp = filled_circle_aa(shape, 0, 0, radius/dt, x/dt, y/dt)
     else:
         r = _r(x, y)
-        pp = (r<=radius).astype(_float())
+        pp = (r<=radius).astype(float())
     return pp
 
 
@@ -232,6 +227,5 @@ def filled_circle_aa(shape, xcenter, ycenter, radius, xarray=None, yarray=None,
         return np.asarray(array).clip(*cliprange)
     else:
         return array
-
 
 # EOF
