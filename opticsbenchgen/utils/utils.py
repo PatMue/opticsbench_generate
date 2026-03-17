@@ -1,10 +1,33 @@
 # pm23 , 29.01.2023
+import logging 
 
 import numpy as np
 import matplotlib.pyplot as plt 
-import logging 
+from skimage import transform
 
 logger = logging.getLogger(__name__)
+
+
+def rotate_psf_by_angle_in_degrees(psf:np.ndarray,angle:float=45,save=False):
+    """!
+    @param[in] psf <np.ndarray> , psf.ndim in [2,3]
+    @param[in] angle <float>   0...360
+    """
+    psf =  transform.rotate(image=psf/psf.sum(axis=(0,1)),
+                     angle= angle,#angle in degrees
+                     resize=False,
+                     center=None,
+                     order=1,
+                     mode="reflect",
+                     cval=0,
+                     clip=True,
+                     preserve_range=False
+                     )
+    if save:
+        savepath = input("Type the savepath: ")
+        np.save(savepath,psf)
+    return psf
+
 
 def get_next_odd_integer(x:float):
     """!"""

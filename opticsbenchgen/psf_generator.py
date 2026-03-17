@@ -8,7 +8,6 @@ import logging
 import copy
 
 import matplotlib.pyplot as plt
-from skimage import transform
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -21,27 +20,6 @@ if __package__ and 'opticsbenchgen' in __package__:
 else:
     from PSF.PSF import PSF
     from utils.utils import get_crop, soft_plot_close, visualize_results
-
-
-def rotate_psf_by_angle_in_degrees(psf:np.ndarray,angle:float=45,save=False):
-    """!
-    @param[in] psf <np.ndarray> , psf.ndim in [2,3]
-    @param[in] angle <float>   0...360
-    """
-    psf =  transform.rotate(image=psf/psf.sum(axis=(0,1)),
-                     angle= angle,#angle in degrees
-                     resize=False,
-                     center=None,
-                     order=1,
-                     mode="reflect",
-                     cval=0,
-                     clip=True,
-                     preserve_range=False
-                     )
-    if save:
-        savepath = input("Type the savepath: ")
-        np.save(savepath,psf)
-    return psf
 
 
 def update_coeffs(coeffs:np.ndarray,coeff_idx:int=3,val:float=1.0):
