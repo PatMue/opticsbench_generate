@@ -1,15 +1,11 @@
 """@package docstring
 Module PSF -- generate psf from zernike polynomials. 
+(c) Patrick Müller 2022-2026
 """
 import logging
 import copy
-
-import pyfftw
 import numpy as np
-from matplotlib.patches import Rectangle
 from scipy import ndimage
-from PIL import Image as PIL_IMG
-
 
 if __package__ and "opticsbenchgen" in __package__:
     from opticsbenchgen.PSF.ZernPoly import get_zemax_fringe_polynomials
@@ -23,14 +19,6 @@ else:
 
 
 logger = logging.getLogger(__name__)
-
-
-def old_version(func):
-    def fcn(*args, **kwargs):
-        logger.info(f"(deprecation warning): The function {func.__name__} is deprecated." +\
-            " See __doc__ for further infos. (experimental)")
-        return func(*args, **kwargs)
-    return fcn
 
 
 class PupilGen():
@@ -64,11 +52,12 @@ class PupilGen():
         self.sampling = sampling
         self.zero_padding = zero_padding
         self.verbose = verbose
+        self.log = logger.info if not self.verbose else print
         camera = self._wrap_camera_names(camera) if as_api else camera
         self._update_camera(camera)
         self.get_physical_grid_from(physical_dim)
         self.get_pupil_function()
-        self.__summarize__()
+        self._summarize()
 
 
     def _wrap_camera_names(self,camera:dict):
@@ -80,7 +69,7 @@ class PupilGen():
                 "xp_diameter":cam["exit_pupil_Diameter"],\
                 "xp_distance":cam["focus_length"],\
                 "wave":cam["wavelength_used"]}
-        except KeyError as err:
+        except Exception as err:
             print(err)
             return None
 
@@ -97,7 +86,7 @@ class PupilGen():
             cam = self.camera
         camera = camera if camera is not None else {}
         for key in camera:
-            if cam.__contains__(key):
+            if key in cam:
                 fcn("replacing key {}: {} -> {}".format(key,cam[key],camera[key]))
                 cam[key] = camera[key]
         self.camera = cam
@@ -116,8 +105,8 @@ class PupilGen():
 
     def __verifyattr__(self,physical_dim):
         """!"""
-        attr = [attr for attr in self._get_options() if physical_dim.__contains__(attr)]
-        self.physical = bool(attr.__len__())
+        attr = [a for a in self._get_options() if physical_dim.__contains__(a)]
+        self.physical = bool(len(attr))
         self.attr = attr[0] if self.physical else None
 
 
@@ -161,7 +150,7 @@ class PupilGen():
                 self.dxp = wz / self.imsize
                 self.pupilgridsize = N * wz / self.imsize
             else:
-                raise(ValueError,f"attribute does not exist: {attr}")
+                raise ValueError(f"attribute does not exist: {attr}")
 
             self.du = 1 / self.pupilgridsize
             self.fnum = z_xp / d_xp
@@ -223,12 +212,11 @@ class PupilGen():
         self.W = np.zeros_like(self.pp)
 
 
-    def __summarize__(self):
+    def _summarize(self):
         """!"""
         if self.physical:
-            fcn = logger.debug if not self.verbose else print
-            fcn("\n...........")
-            fcn("The following setup is used:")
+            fcn = self.log
+            fcn("\n...........\nThe following setup is used:")
             fcn("D: {}mm\nz0: {}mm\nwave: {}µm\nN: {}\n".format(\
                 self.camera["xp_diameter"]*1e3,self.camera["xp_distance"]*1e3,\
                 self.camera["wave"]*1e6,self.sampling))
@@ -257,7 +245,7 @@ class PupilGen():
             np.shape(self.Z)))
 
 
-    def _get_aggregated_wavefront_(self,coeff:np.ndarray,n:np.ndarray=None,m:np.ndarray=None):
+    def _get_aggregated_wavefront(self,coeff:np.ndarray,n:np.ndarray=None,m:np.ndarray=None):
         """!
         Compute the wavefront using Zernike polynomials:
             @param[in] coeff: [np.ndarray]  the coefficient values
@@ -269,7 +257,7 @@ class PupilGen():
         logger.debug("np.mean W: {}".format(np.mean(self.W[self.pp_mask]))) # 1.56..
 
 
-    def __create_imager__(self):
+    def _create_imager(self):
         """!
         Create the specified imager.
         """
@@ -278,9 +266,8 @@ class PupilGen():
         sensor_dim = [round(pixelSize*sz,2) for sz in imsize]
         self.imager_center = [imsize[0]//2,imsize[1]//2]
 
-        fcn = logger.info if not self.verbose else print
-        fcn("----------------\nphysical grid for imager created")
-        fcn("camera_sensor_dim: [height:y,width:x] " + str(sensor_dim*1e3) + " mm")
+        self.log("----------------\nphysical grid for imager created")
+        self.log("camera_sensor_dim: [height:y,width:x] " + str(sensor_dim*1e3) + " mm")
 
 
     def _get_fringe_aggregated_wavefront_without_tilt(self,coeff):
@@ -288,8 +275,8 @@ class PupilGen():
         tilt_xy_removed = copy.deepcopy(coeff[1:3])
         coeff_temp = copy.deepcopy(coeff)
         coeff_temp[1:3] = 0 # set to zero in storage for the copied list
-        print(f"Removing tilt x and y: {tilt_xy_removed} . Total of {len(coeff)} coefficients.")
-        self._get_aggregated_wavefront_(coeff_temp)
+        self.log(f"Removing tilt x and y: {tilt_xy_removed} . Total of {len(coeff)} coefficients.")
+        self._get_aggregated_wavefront(coeff_temp)
         return tilt_xy_removed
 
 
@@ -326,47 +313,47 @@ class PupilGen():
 
 class PSF():
     """
-    Apply Zernike polynomials to form a PSF , (c) Patrick Müller 2020-2023
+    Apply Zernike polynomials to form a PSF
     """
-    # static class attributes,
-    rho = np.array([]) # polar coordinates
-    phi = np.array([])
-    idx = np.array([])
-    pp = np.array([]) # pupil function
-    z = np.array([]) # zernike => however, is defined as psf collector obj ->"Z"
-    W = np.array([])  # phase error
-    # the final PSF:
-    PSF = np.array([])
-    # additional attributes (pupil and imager definition):
-    x = None
-    delta_x = None
-    df = None
-    fx = None
-    pp_pupil_size_px = None
-    pp_pixel_size = None
-    pp_radius = None
-    relative_pupil_area = None
-    physical_pixel_size = None
-    physical_PSF_extent = None
-    scaling_factor = None
-    imager_resolution = None
-    imager_center = None
-    crop_to_size = None
 
-    """
-    Initialize the PSF simulation based on pupil simulation
-    """
     def __init__(self,camera_data:dict=None,interpolation_functions:list=None,\
             balance_coeff_fcns:list=None,scale_by_pixel_size:bool=True,\
-            accelerate_with_CUDA:bool=False,j_max=20,use_old_version:bool=False,\
-            verbose=False):
+            accelerate_with_CUDA:bool=False,j_max=20,verbose=False):
         """! Initializes the PSF class.
         @param camera_data: [dict] with all camera definitions
         @param interpolation_functions: [list] with coefficient fcns for interpolated imager grid
         @param balance_coeff_fcns: [list] containing parameter variations
         @param scale_by_pixel_size: [bool]
-        @param accelerate_with_CUDA: [bool] whether to use GPU or CPU processing (if available)
+        @param accelerate_with_CUDA: [bool] whether to use GPU or CPU processing
         """
+
+        """
+        Initialize the PSF simulation based on pupil simulation
+        """
+        self.z = np.array([]) # zernike polynomials
+        self.W = np.array([])  # phase error
+        self.psf = np.array([])
+        self.rho = np.array([]) # polar coordinates
+        self.phi = np.array([])
+        self.idx = np.array([])
+        self.pp = np.array([]) # pupil function
+
+        # additional attributes (pupil and imager definition):
+        self.x = None
+        self.delta_x = None
+        self.df = None
+        self.fx = None
+        self.pp_pupil_size_px = None
+        self.pp_pixel_size = None
+        self.pp_radius = None
+        self.relative_pupil_area = None
+        self.physical_pixel_size = None
+        self.physical_PSF_extent = None
+        self.scaling_factor = None
+        self.imager_resolution = None
+        self.imager_center = None
+        self.crop_to_size = None
+
         if camera_data is None:
             camera_data = {"exit_pupil_sampling_grid_size": 2**10,"pp_factor": 1}
         if isinstance(camera_data["pp_factor"],str):
@@ -378,84 +365,53 @@ class PSF():
         self.scale_by_pixel_size = scale_by_pixel_size
         self.j_max = j_max
         self.verbose = verbose
+        self.log = logger.info if not self.verbose else print
         self.generate_pupil()
         logger.debug("initialized psf object with pupil {}".format(self.pp.shape))
 
 
-    def generate_pupil(self,use_old_version=False,circular_pupil_sampling_min=32):
+    def generate_pupil(self,circular_pupil_sampling_min=32):
         """!
         generates a physical pupil.
         """
-        report_fcn = logger.info if not self.verbose else print
         camera_data = self.camera_data
-        if not use_old_version:
-            valid_sampling = False
-            pupilgridsize = camera_data["exit_pupil_Diameter"]
-            circular_pupil_sampling = copy.deepcopy(camera_data["exit_pupil_sampling_grid_size"])
-            while not valid_sampling and circular_pupil_sampling >= circular_pupil_sampling_min:
-                pupil = PupilGen(camera=camera_data,\
-                    sampling=camera_data["exit_pupil_sampling_grid_size"],\
-                    verbose=self.verbose,**{"pupilgridsize":pupilgridsize})
-                self.scaling_factor = pupil.dx / camera_data["pixelSize"]
-                logger.debug("scaling factor: {}".format(self.scaling_factor))
-                if self.scaling_factor >= 1 and not valid_sampling:
-                    msg = "Physical psf sampling {}µm is bigger than ".format(\
-                        np.round(pupil.dx*1e6,3))
-                    msg += "the imager pixel size {}µm. Decrease wave*z_xp / pupilgridsize".format(\
-                    np.round(camera_data["pixelSize"]*1e6,3))
-                    pupilgridsize *= 2
-                    circular_pupil_sampling /= 2
-                    msg += f"\nDoubling pupilgridsize to: {np.round(1e3*pupilgridsize,3)}mm."
-                    msg += f"Circular pupil: {circular_pupil_sampling}/{pupil.sampling} values."
-                    logger.warning(msg)
-                    report_fcn(msg)
-                else:
-                    valid_sampling = True
-                    pupil.__get_precomputed_zernike_polynomials_from_zemax__(self.j_max)
-                    self.Z = pupil.Z
-                    self.__properties__ = pupil.properties
-                    self.physical_extent = pupil.extent
-                    self.physical_pixel_size = pupil.dx  # psf sampling [m]
-                    self.pp_mask = pupil.pp_mask
-                    self.pp = pupil.pp
-                    self.df  = pupil.dxp # pupil sampling
-                    self.simulated_pp_diameter_px = \
-                        self.pp_mask[self.pp_mask[self.pp_mask.shape[0]//2] == True,:].shape[0]
-                    report_fcn("Scaling from {} to {}--> {}.".format(pupil.dx,camera_data["pixelSize"],\
-                        self.scaling_factor))
-                    logger.info("Scaling from {} to {}--> {}.".format(\
-                        pupil.dx,camera_data["pixelSize"],self.scaling_factor))
-            assert circular_pupil_sampling >= 32, "Increase sampling to allow for processing."
-            self.pupilgen = pupil
-        else:
-            raise NotImplementedError
+        valid_sampling = False
+        pupilgridsize = camera_data["exit_pupil_Diameter"]
+        circular_pupil_sampling = copy.deepcopy(camera_data["exit_pupil_sampling_grid_size"])
+        while not valid_sampling and circular_pupil_sampling >= circular_pupil_sampling_min:
+            pupil = PupilGen(camera=camera_data,\
+                sampling=camera_data["exit_pupil_sampling_grid_size"],\
+                verbose=self.verbose,**{"pupilgridsize":pupilgridsize})
+            self.scaling_factor = pupil.dx / camera_data["pixelSize"]
+            logger.debug("scaling factor: {}".format(self.scaling_factor))
+            if self.scaling_factor >= 1 and not valid_sampling:
+                msg = "Physical psf sampling {}µm is bigger than ".format(\
+                    np.round(pupil.dx*1e6,3))
+                msg += "the imager pixel size {}µm. Decrease wave*z_xp / pupilgridsize".format(\
+                np.round(camera_data["pixelSize"]*1e6,3))
+                pupilgridsize *= 2
+                circular_pupil_sampling /= 2
+                msg += f"\nDoubling pupilgridsize to: {np.round(1e3*pupilgridsize,3)}mm."
+                msg += f"Circular pupil: {circular_pupil_sampling}/{pupil.sampling} values."
+                logger.warning(msg)
+                self.log(msg)
+            else:
+                valid_sampling = True
+                pupil.__get_precomputed_zernike_polynomials_from_zemax__(self.j_max)
+                self.Z = pupil.Z
+                self.__properties__ = pupil.properties
+                self.physical_extent = pupil.extent
+                self.physical_pixel_size = pupil.dx  # psf sampling [m]
+                self.pp_mask = pupil.pp_mask
+                self.pp = pupil.pp
+                self.df  = pupil.dxp # pupil sampling
+                self.simulated_pp_diameter_px = \
+                    self.pp_mask[self.pp_mask[self.pp_mask.shape[0]//2] == True,:].shape[0]
+                
+                self.log(f"Scaling {pupil.dx} to {camera_data['pixelSize']}, {self.scaling_factor}.")
 
-
-    @old_version
-    def getWavefront(self,coeff:np.ndarray,n:np.ndarray,m:np.ndarray):
-        """!
-        Compute the wavefront using Zernike polynomials
-        @param[in] coeff: [np.ndarray]  the coefficient values
-        @param[in] n: [np.ndarray] the polynomial index
-        @param[in] m: [np.ndarray] the polynomial index
-        """
-        self.W = np.zeros(self.pp.shape) # initialize array of size pp.shape --> e.g. 512x512
-        self.W[self.pp_mask] = np.squeeze(np.dot(coeff.transpose(),\
-            [ZernPoly.zernike_fun_optimizer(int(n[k]),int(m[k]),\
-                self.rho[self.pp_mask],self.phi[self.pp_mask]) for k in range(0,len(n))]).transpose())
-
-
-    def getWavefront_using_Chongs_method(self,coeff:np.ndarray,n:np.ndarray,m:np.ndarray):
-        """!
-        Compute the wavefront using Zernike polynomials and Chong et al. method (acceleration)
-        @param[in] coeff: [np.ndarray]  the coefficient values
-        @param[in] n: [np.ndarray] the polynomial index
-        @param[in] m: [np.ndarray] the polynomial index
-        """
-        self.W = np.zeros(self.pp.shape) # initialize array of size pp.shape -->
-        self.W[self.pp_mask] = np.squeeze(np.dot(coeff.transpose(),\
-            ZernPoly.zernike_fun_using_chong_et_al_method(n,m,\
-            self.rho[self.pp_mask],self.phi[self.pp_mask])).transpose())
+        assert circular_pupil_sampling >= 32, "Increase sampling to allow for processing."
+        self.pupilgen = pupil
 
 
     def getWavefront_using_precomputed_Z(self,coeff:np.ndarray):
@@ -470,86 +426,15 @@ class PSF():
         self.W = np.reshape(np.squeeze(np.dot(coeff.transpose(),self.Z).transpose()),self.pp.shape)
 
 
-    def getWavefront_using_precomputed_Z_batch(self,coeff_batch:np.ndarray):
-        """!
-        Use precomputed single Zernike Polynomials to acquire the wavefront
-        @param[in] coeff: [np.ndarray] <batch_size,num_coeffs>
-        Z has shape: <num_coeffs,prod(pp.shape)>
-        @param[out] W: [np.ndarray]  <batch_size,pp.shape[0],pp.shape[1]>
-        """
-        logger.debug("this function can only be used if all wavefronts have the same" +\
-            "(number) of polynomials required <-> n_list_ij == n_list for m respectively)")
-        logger.debug("shape of coeff_batch: {}, Z: {}, pp,W: {}".format(\
-            coeff_batch.shape,np.shape(self.Z),self.pp.shape))
-        return np.reshape(np.dot(coeff_batch,self.Z),(coeff_batch.shape[0],*self.pp.shape))
-
-
-    def getWavefront_unoptimized(self,coeff:np.ndarray,n:np.ndarray,m:np.ndarray):
-        """!
-        Compute the wavefront using Zernike polynomials (no optimization)
-        @param[in] coeff: [np.ndarray]  the coefficient values
-        @param[in] n: [np.ndarray] the polynomial index
-        @param[in] m: [np.ndarray] the polynomial index
-        """
-        print("getWavefront: Unoptimized function called - n-dimensional dot product \
-            and  is much faster than the below implementation")
-        self.W = np.zeros(self.pp.shape)
-        for k,nn in enumerate(n):
-            self.z = ZernPoly.zernike_fun(int(nn),int(m[k]),self.rho[self.pp_mask],self.phi[self.pp_mask])
-            self.W[self.pp_mask] += float(coeff[k])*self.z
-
-
-    def get_coefficients_for_current_position(self,x:float,y:float,\
-            interpolation_mode="bilinear",verbose=False,balance_coeff_fcns=None,\
-            use_zemax_export=True):
-        """!
-        @param[in] x: x_position in px [col]
-        @param[in] y: y_position in px [row]
-        @param[in] verbose: False, True: print the current coefficients from the interpolation
-        @param[out] coeff: array with all coefficients for the current position to form \
-            a phase error function, ordering as set in Dataflow
-        """
-        if balance_coeff_fcns is not None:
-            if "bilinear" in interpolation_mode:
-                coeff = np.array([f.__call__(y,x) for f in self.interpolation_functions])
-            elif "linear_1D" in interpolation_mode:
-                coeff =  np.array([f(np.sqrt((y-self.imager_center[0])**2 + \
-                    (x-self.imager_center[1])**2)) for f in self.interpolation_functions])
-            else:
-                coeff =  np.array([f.__call__(y,x) for f in self.interpolation_functions])
-
-            if use_zemax_export:
-                factors = balance_coeff_fcns
-                logger.debug(f"coeff before: {coeff[:5]}")
-                coeff =  np.multiply(coeff,factors)
-                logger.debug(f"coeff after: {coeff[:5]}")
-                return coeff
-            else:
-                logger.debug("coeff before: " + str(coeff[1]))
-                coeff = np.multiply(coeff,[balance_coeff_fcns[j](\
-                    get_normed_coordinate(y,self.camera_data["imager_center"][0])) if (j \
-                        < len(balance_coeff_fcns)) else 1 for j \
-                        in range(0,len(self.interpolation_functions))])  # weight tilt only
-                logger.debug("coeff after: " + str(coeff[1])) #pass # coeff[1] = -40#-30#-30 # in px
-                return coeff
-
-        if "bilinear" in interpolation_mode:
-            return np.array([f.__call__(y,x) for f in self.interpolation_functions])
-        if "linear_1D" in interpolation_mode:
-            return  np.array([f(np.sqrt((y-self.imager_center[0])**2+(x\
-                -self.imager_center[1])**2)) for f in self.interpolation_functions])
-        return  np.array([f.__call__(y,x) for f in self.interpolation_functions])
-
-
     def getPSF(self,showWarning=True):
         """!
-        Deprecated.
+        Deprecated. Use pyfftw.
         """
         if showWarning:
-            print('deprecated: call getPSF_using_pyfftw() is much faster')
+            print('deprecated: getPSF_using_pyfftw() is much faster')
         P = np.multiply(self.pp,np.exp(-1j*(+2)*np.pi*self.W))
-        self.PSF = np.abs(np.fft.fftshift(np.fft.fft2(P),axes=None)*self.df**2)**2
-        self.PSF = self.PSF/self.PSF.sum()
+        self.psf = np.abs(np.fft.fftshift(np.fft.fft2(P),axes=None)*self.df**2)**2
+        self.psf = self.psf/self.psf.sum()
 
 
     def getPSF_using_pyfftw(self,pyfftwObj):
@@ -559,104 +444,12 @@ class PSF():
         """
         # https://github.com/brandondube/prysm/blob/master/prysm/propagation.py
         logger.debug("W: {}, pupil: {}, df: {}".format(self.W.shape,self.pp.shape,self.df))
-        self.PSF = np.abs(np.fft.fftshift(pyfftwObj(np.multiply(\
+        self.psf = np.abs(np.fft.fftshift(pyfftwObj(np.multiply(\
             self.pp,np.exp(-1j*(+2*np.pi)*self.W))),axes=None)*self.df**2)**2
-        self.PSF = self.PSF / self.PSF.sum() # 0...1
-
-
-    def prepare_PSF_collector(obj,specs:dict,n:np.ndarray=None,m:np.ndarray=None,\
-            interpolation_functions:list=None,balance_coeff_fcns:list=None,verbose=False):
-        """!
-        ###############################################################
-        PSF Simulation with pupil functions , v. 0.10 (c) Patrick Müller
-        ###############################################################
-        @param[in] obj: Dataflow object
-        @param[in] specs: dictionary containing specs from Dataflow processing function
-        @param[in] ff: interpolation functions created by \
-            Dataflow.create_coefficient_map_with_selected_ordering
-        @param[in] verbose=False: True -> show some informations about the optics and data
-        @param[out] zern: PSF object using ZernPoly
-        """
-        PSF_collector = PSF(specs["camera_data"],interpolation_functions=\
-            interpolation_functions,balance_coeff_fcns=balance_coeff_fcns,\
-            accelerate_with_CUDA=specs["processing"]["accelerate_with_CUDA"],\
-            j_max=specs["PSF_generation"]["j_max"],verbose=verbose)
-        PSF_collector.create_imager()
-        PSF_collector.crop_to_size = obj.crop_to_size
-        if specs["PSF_generation"]["reference_pp_diameter_px"]:
-            if specs["PSF_generation"]["use_sqrt"]:
-                PSF_collector.relative_pupil_area = \
-                    np.sqrt((specs["PSF_generation"]["reference_pp_diameter_px"]**2) \
-                    /(PSF_collector.simulated_pp_diameter_px**2))
-            else:
-                PSF_collector.relative_pupil_area = \
-                    (specs["PSF_generation"]["reference_pp_diameter_px"]**2) \
-                    /(PSF_collector.simulated_pp_diameter_px**2)
-        else:
-            PSF_collector.relative_pupil_area = [] # do nothing
-
-        if not specs["PSF_generation"]["use_zemax_export"]:
-            PSF_collector.Z = ZernPoly.zernike_fun_using_chong_et_al_method(n,
-                m,
-                PSF_collector.rho[PSF_collector.pp_mask],
-                PSF_collector.phi[PSF_collector.pp_mask],
-                pp_factor = PSF_collector.camera_data["pp_factor"],
-                pp_relative_area = [])#PSF_collector.relative_pupil_area) # relative area
-        else:
-            logger.info("Precomputed zernike polynomials of shape: {}".format(\
-                np.shape(PSF_collector.Z)))
-
-        logger.debug("Transition zone for z0 is at about: " + \
-            str(round(specs["camera_data"]["exit_pupil_Diameter"]**2 / (500*1e-9),4)) + \
-                " meters")
-        return PSF_collector
-
-
-    def get_psf_from_sample_coeffs(PSF_collector,specs:dict,pyfftwObj,coeffs:np.ndarray,\
-            binning=False,rotate=False):
-        """!"""
-        PSF_collector.getWavefront_using_precomputed_Z(coeffs)
-        PSF_collector.getPSF_using_pyfftw(pyfftwObj)
-        if rotate and "linear_1D" in specs["PSF_generation"]["interpolation_mode"]:
-            PSF_collector.rotate_using_ndimage(x,y) #(x[1],y[1])
-        if binning:
-            PSF_collector.binning(binFactor = specs["PSF_output"]["binFactor"])
-        return PSF_collector.PSF
-
-
-    def get_current_PSF(PSF_collector,specs:dict,pyfftwObj,x:float,\
-            y:float,n:np.ndarray,m:np.ndarray):
-        """
-        @param[in] x: x_position in image for meta data access
-        @param[in] y: y_position in image for meta data access
-        @param[in] coeff: all coefficients to generate the current
-        @param[in] specs:
-        """
-        if specs["processing"]["use_chongs_method"]:
-            PSF_collector.getWavefront_using_Chongs_method(\
-                PSF_collector.get_coefficients_for_current_position(x,y,\
-                interpolation_mode=specs["PSF_generation"]["interpolation_mode"],\
-                verbose=False,use_zemax_export=specs["PSF_generation"]["use_zemax_export"]),n,m) # no weight => A_coeff = 1,
-                #write to PSF_collector.W without explicitly overwriting the object
-        elif specs["processing"]["use_chongs_method"] is None:
-            PSF_collector.getWavefront_using_precomputed_Z(\
-                PSF_collector.get_coefficients_for_current_position(x,y,\
-                interpolation_mode=specs["PSF_generation"]["interpolation_mode"],\
-                use_zemax_export=specs["PSF_generation"]["use_zemax_export"]))
-        else:
-            PSF_collector.getWavefront(PSF_collector.get_coefficients_for_current_position(\
-                x,y,interpolation_mode=specs["PSF_generation"]["interpolation_mode"],\
-                verbose=False,use_zemax_export=specs["PSF_generation"]["use_zemax_export"]),n,m)
-        PSF_collector.getPSF_using_pyfftw(pyfftwObj)
-
-        if specs["PSF_generation"]["interpolation_mode"].get("linear_1D",False):
-            PSF_collector.rotate_using_PIL(x,y)
-        PSF_collector.binning(binFactor = specs["PSF_output"]["binFactor"])
-        
-        return PSF_collector.PSF / PSF_collector.PSF.sum()
+        self.psf = self.psf / self.psf.sum() # 0...1
 
  
-    def rotate_using_ndimage(self,x,y,verbose=False):
+    def rotate_using_ndimage(self,x,y):
         """!
         Rotate PSF using scipy.ndimage.rotate (for consistency checks)
         """
@@ -664,7 +457,7 @@ class PSF():
         # fixed to +angle --> using validation proof
         if angle >= 180:
             angle = 180 - angle
-        self.PSF = ndimage.rotate(self.PSF,
+        self.psf = ndimage.rotate(self.psf,
                             angle,
                             axes=(1, 0),
                             reshape=False,
@@ -673,10 +466,10 @@ class PSF():
                             mode='constant',
                             cval=0.0,
                             prefilter=True)
-        return self.PSF/np.max(self.PSF) # 0...1
+        return self.psf/np.max(self.psf) # 0...1
 
 
-    def binning(self,verbose = False, binFactor:list=None):
+    def binning(self, binFactor:list=None,order=3,mode='constant'):
         """
         @param[in] binFactor:   Target size to resample the PSF to.
                                 None: no binning,
@@ -686,46 +479,23 @@ class PSF():
                                 (order = 1 as experiments suggested on 17.02.2023)
         """
         if binFactor is not False:
-            grid_mode = True if not self.PSF.shape[0] % 2 else False
-            logger.debug("Note that with the current implementation not all PSF sizes \
-                are available --> e.g. [32,32] but not [30,30]")
-            logger.debug("self.PSF.shape before binning: " + str(self.PSF.shape))
-
-            self.PSF = ndimage.zoom(self.PSF, self.scaling_factor, output=None, \
-                 order=3, mode='constant', cval=0.0, prefilter=True,grid_mode=grid_mode)
+            grid_mode = True if not self.psf.shape[0] % 2 else False
+            self.psf = ndimage.zoom(self.psf, self.scaling_factor, output=None, \
+                                        order=order, mode=mode, cval=0.0, 
+                                        prefilter=True,grid_mode=grid_mode
+                                        )
+            
                                          
-            logger.debug("Now the PSF has approximately pixel size of the target imager!")
-            logger.debug("PSF [px]: " + str(self.PSF.shape))
-            logger.debug("crop the PSF size from " + \
-                str(round(self.PSF.shape[0]*self.camera_data["pixelSize"]*1e6,3)) +\
-                "µm to 50µm maximum: ")
-            logger.debug("Pupil full grid size: " + str(self.pp.shape[0]))
-            logger.debug("PSF shape after binning: " + str(self.PSF.shape))
-            if verbose:
-                self.plot_physical_PSF(wait_for_user_input=True)
-
-
-    def crop(self,verbose=False,odd=True):
+    def crop(self,odd=True):
         """ crop the psf to physical size / target size."""
         if self.crop_to_size is None:
             targetsize = self.camera_data["maximum_PSF_size_m"] # 50µm in [m]
-            logger.debug("target size: {}µm, actual: {}µm".format(1e6*targetsize,\
-                self.PSF.shape[0]*self.camera_data["pixelSize"]*1e6))                
-            crop = get_crop(self.PSF.shape[0],targetsize_m=targetsize,\
+            crop = get_crop(self.psf.shape[0],targetsize_m=targetsize,\
                  pixelsize=self.camera_data["pixelSize"],odd=odd)
         else:
-            crop = get_crop(self.PSF.shape[0],self.crop_to_size[0])
-            logger.debug("crop_to_size: {}".format(self.crop_to_size))
+            crop = get_crop(self.psf.shape[0],self.crop_to_size[0])
 
-        if crop is not None: # otherwise it would be no crop
-            self.PSF = self.PSF[crop,crop]
-            logger.debug(f"cropped (odd: {odd}) to {self.PSF.shape} using slice: {crop}")
-
-        logger.debug("PSF shape after binning and cropping: " + str(self.PSF.shape))
-        logger.debug("PSF size is now: {} [px] and {}µm".format(self.PSF.shape, \
-            round(self.PSF.shape[0]*self.camera_data["pixelSize"]*1e6,4)))
-        logger.debug("self.physical_pixel_size [µm]" + str(round(self.physical_pixel_size*1e6,4)))
-        logger.debug("camera_data[pixelSize]: " + str(round(self.camera_data["pixelSize"]*1e6,4)) + "µm")
-        
+        if crop is not None:
+            self.psf = self.psf[crop,crop]
 
 #EOF

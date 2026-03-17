@@ -1,13 +1,17 @@
-# create basis psf. (zernike polynomials based) (c) Patrick Müller 2023
+"""@package docstring
+Module PSF -- generate psf from zernike polynomials. 
+(c) Patrick Müller 2023
+"""
+
 import os
 import logging
 import copy
 
-logger = logging.getLogger(__name__)
-
 import matplotlib.pyplot as plt
 from skimage import transform
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 if __package__ and 'opticsbenchgen' in __package__:
@@ -16,6 +20,7 @@ if __package__ and 'opticsbenchgen' in __package__:
     from opticsbenchgen.utils.utils import soft_plot_close, visualize_results
 else:
     from PSF.PSF import PSF
+    from utils.utils import get_crop, soft_plot_close, visualize_results
 
 
 def rotate_psf_by_angle_in_degrees(psf:np.ndarray,angle:float=45,save=False):
@@ -39,28 +44,33 @@ def rotate_psf_by_angle_in_degrees(psf:np.ndarray,angle:float=45,save=False):
     return psf
 
 
-def update_coeffs(coeffs:np.ndarray,coeff:int=3,val:float=1.0):
+def update_coeffs(coeffs:np.ndarray,coeff_idx:int=3,val:float=1.0):
     """!"""
-    coeffs[coeff] = val
+    coeffs[coeff_idx] = val
     return coeffs
 
 
-def get_psf(wyant_coeff:int=None,fringe_coeff:int=None,
+def get_psf(wyant_coeff:int=None,fringe_coeff:int=None,skip_zero=True,
             wfe:float=1.0,j_max:int=12,target_size=25,camera_data:dict=None): #-> np.ndarray:
     """    
     get a single psf with single coefficient     
     """
-    if fringe_coeff:
+    if fringe_coeff is not None:
         wyant_coeff = fringe_coeff -1  # internally uses wyant scheme
+    elif wyant_coeff is None:
+        raise ValueError("Please provide either wyant_coeff or fringe_coeff.")
     
     psf_simple,coeffs = initialize_simple_psf(j_max=j_max,camera_data=camera_data,
-                                              sz=target_size) 
-    coeffs = update_coeffs(np.zeros_like(coeffs),coeff=wyant_coeff,val=wfe) 
+                                              sz=target_size,skip_zero=skip_zero) 
+    
+    wyant_coeff = wyant_coeff - 1 if skip_zero else wyant_coeff
+
+    coeffs = update_coeffs(np.zeros_like(coeffs),coeff_idx=wyant_coeff,val=wfe) 
 
     psf_simple = evaluate_psf(psf_simple,coeffs)
     psf_simple.binning(binFactor=True)
     psf_simple.crop()
-    return psf_simple.PSF
+    return psf_simple.psf
 
 
 def get_mixed_psf(wyant_coeffs:list=None,fringe_coeffs:list=None,
@@ -70,12 +80,17 @@ def get_mixed_psf(wyant_coeffs:list=None,fringe_coeffs:list=None,
     get a single psf with multiple coefficients [(wyant_coeff_num,wfe),    
     skip_zero: <bool> True  -- opticsbenchgen default 
     """
+    assert wfes is not None, "Provide a list of wavefront errors (wfe) matching the number of coefficients."
 
     if fringe_coeffs:
         wyant_coeffs = [f-1 for f in fringe_coeffs]  # internally uses wyant scheme
-    
+    elif wyant_coeffs is None:
+        raise ValueError("Provide either wyant_coeffs or fringe_coeffs.")
     if skip_zero:
         wyant_coeffs = [w-1 for w in wyant_coeffs]
+
+    if len(wyant_coeffs) != len(wfes):
+            raise ValueError("The number of coefficients must match the number of wfes.")
 
     psf_simple,coeffs = initialize_simple_psf(
                 j_max=j_max,
@@ -84,12 +99,12 @@ def get_mixed_psf(wyant_coeffs:list=None,fringe_coeffs:list=None,
                 skip_zero=skip_zero) 
 
     for wyant_coeff,wfe in zip(wyant_coeffs,wfes):
-        coeffs = update_coeffs(coeffs,coeff=wyant_coeff,val=wfe) 
+        coeffs = update_coeffs(coeffs,coeff_idx=wyant_coeff,val=wfe) 
 
     psf_simple = evaluate_psf(psf_simple,coeffs)
     psf_simple.binning(binFactor=True)
     psf_simple.crop()
-    return psf_simple.PSF
+    return psf_simple.psf
 
 
 def get_basis_psfs(wfe=5.0,j_max=32):
@@ -99,11 +114,11 @@ def get_basis_psfs(wfe=5.0,j_max=32):
     
     psf_simple,coeffs = initialize_simple_psf(j_max=j_max) #  nm.shape: (19,2)
     for coeff in range(5,12):#range(len(coeffs)):
-        coeffs = update_coeffs(np.zeros_like(coeffs),coeff=coeff,val=wfe)
+        coeffs = update_coeffs(np.zeros_like(coeffs),coeff_idx=coeff,val=wfe)
         psf_simple = evaluate_psf(psf_simple,coeffs)
         pupil = psf_simple.pp
         psf_simple.binning(binFactor=True)
-        psf = psf_simple.PSF
+        psf = psf_simple.psf
         if coeff == 0:
             visualize_results(psf=psf,pupil=pupil,coeff=coeff)
         else:
@@ -122,16 +137,27 @@ def evaluate_psf(psf_simple,coeffs):
 def initialize_simple_psf(j_max=20,sz=25,camera_data=None,skip_zero=True):
     """!"""
     if camera_data is None:
-        camera_data = {"exit_pupil_Diameter":5e-3,"pp_factor":1,\
-            "exit_pupil_sampling_grid_size":128,"sampling":128,"pixelSize":3.5e-6,\
-            "focus_length":25e-3,"wavelength_used":0.532e-6,\
-            "sensor_px_x":100,"sensor_px_y":100,"maximum_PSF_size_m":100e-6}
+        camera_data = {
+            "exit_pupil_Diameter":5e-3,
+            "pp_factor":1,
+            "exit_pupil_sampling_grid_size":128,
+            "sampling":128,
+            "pixelSize":3.5e-6,
+            "focus_length":25e-3,
+            "wavelength_used":0.532e-6,
+            "sensor_px_x":100,
+            "sensor_px_y":100,
+            "maximum_PSF_size_m":100e-6
+        }
         
-    psf_simple = PSF(camera_data,interpolation_functions=None,
-                    balance_coeff_fcns=None,accelerate_with_CUDA=False,\
-                    j_max=j_max
-                    )
-    
+    psf_simple = PSF(
+            camera_data,
+            interpolation_functions=None,
+            balance_coeff_fcns=None,
+            accelerate_with_CUDA=False,\
+            j_max=j_max
+        )
+
     nm,__ = get_zernike_ordering_nm_helper(j_max=j_max,ordering="Fringe",skip_zero=skip_zero)
     coeffs = np.zeros(len(nm))
     logger.debug(f"nm ({np.shape(nm)}): {nm}")
