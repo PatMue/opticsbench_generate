@@ -4,7 +4,6 @@ Module PSF -- generate psf from zernike polynomials.
 import logging
 import copy
 
-from numba import jit
 import pyfftw
 import numpy as np
 from matplotlib.patches import Rectangle
@@ -13,12 +12,13 @@ from PIL import Image as PIL_IMG
 
 
 if __package__ and "opticsbenchgen" in __package__:
-    from opticsbenchgen.PSF.ZernPoly import ZernPoly,get_zemax_fringe_polynomials
-    from opticsbenchgen.utils.utilities import get_crop, soft_plot_close
+    from opticsbenchgen.PSF.ZernPoly import get_zemax_fringe_polynomials
+    from opticsbenchgen.utils.utils import get_crop, soft_plot_close
+    from opticsbenchgen.PSF.utils import get_zernike_ordering_nm_helper
     import opticsbenchgen.PSF.geometry
 else:
-    from PSF.ZernPoly import ZernPoly,get_zemax_fringe_polynomials
-    from utils.utilities import get_crop, soft_plot_close
+    from PSF.ZernPoly import get_zemax_fringe_polynomials
+    from utils.utils import get_crop, soft_plot_close
     import PSF.geometry
 
 
@@ -64,14 +64,14 @@ class PupilGen():
         self.sampling = sampling
         self.zero_padding = zero_padding
         self.verbose = verbose
-        camera = self.__wrap_camera_names__(camera) if as_api else camera
-        self.__update_camera__(camera)
-        self.__get_physical_grid_from__(physical_dim)
-        self.__get_pupil_function__()
+        camera = self._wrap_camera_names(camera) if as_api else camera
+        self._update_camera(camera)
+        self.get_physical_grid_from(physical_dim)
+        self.get_pupil_function()
         self.__summarize__()
 
 
-    def __wrap_camera_names__(self,camera:dict):
+    def _wrap_camera_names(self,camera:dict):
         """!"""
         try:
             cam = copy.deepcopy(camera)
@@ -85,13 +85,13 @@ class PupilGen():
             return None
 
 
-    def __update_camera__(self,camera:dict=None):
+    def _update_camera(self,camera:dict=None):
         """!
         overwrites only values which are within
         """
         fcn = logger.debug if not self.verbose else print
         if self.camera is None:
-            cam = self.__get_sample_camera__()
+            cam = self._get_sample_camera()
             camera["sampling"] = self.sampling
         else:
             cam = self.camera
@@ -103,25 +103,25 @@ class PupilGen():
         self.camera = cam
 
 
-    def __get_sample_camera__(self):
+    def _get_sample_camera(self):
         """!"""
         return {"dx":1e-6,"sampling":64,"wave":0.4861e-6,"imsize":0.1e-3,\
             "xp_diameter":6.392825e-3,"xp_distance":25.00002e-3}
 
 
-    def __get_options__(self):
+    def _get_options(self):
         """!"""
         return ["dx","dxp","pupilgridsize","imsize"]
 
 
     def __verifyattr__(self,physical_dim):
         """!"""
-        attr = [attr for attr in self.__get_options__() if physical_dim.__contains__(attr)]
+        attr = [attr for attr in self._get_options() if physical_dim.__contains__(attr)]
         self.physical = bool(attr.__len__())
         self.attr = attr[0] if self.physical else None
 
 
-    def __get_physical_grid_from__(self,physical_dim:dict):
+    def get_physical_grid_from(self,physical_dim:dict):
         """!
         If there is any of the supported kwargs given, model uses physical units
         args:
@@ -177,21 +177,21 @@ class PupilGen():
             self.extent = {"imsize":{"val":(-sz,sz,-sz,sz),"unit":"µm"},\
                 "pupilgridsize":{"val":(-sz_p,sz_p,-sz_p,sz_p),"unit":"mm"}}
 
-            self.__update_camera__({"dx":self.dx,"imsize":self.imsize})
+            self._update_camera({"dx":self.dx,"imsize":self.imsize})
 
         else:
             self.extent = (-1,1,-1,1)
             logger.info("\nnon physical computation... using normalized coords*******\n")
 
-        self.__save_properties__()
+        self._save_properties()
 
 
-    def __save_properties__(self):
+    def _save_properties(self):
         """!"""
         self.properties = copy.deepcopy(self.__dict__)
 
 
-    def __get_pupil_function__(self,use_module="framework"):
+    def get_pupil_function(self,use_module="framework"):
         """! Calculates the pupil function.
             @param[in] sampling: $2**9$
             @param[out] self.cart2pol(X,Y): the polar coordinates of the generated pupil
@@ -240,28 +240,13 @@ class PupilGen():
             fcn("...........\n")
 
 
-    def _get_n_m_from_nm_(self,nm=None,jmax=15,ordering="OSA/ANSI"):
+    def _get_n_m_from_nm(self,nm=None,jmax=15,ordering="OSA/ANSI"):
         """! polynomial names """
         if nm is None:
             nm,__ = get_zernike_ordering_nm_helper(j_max=jmax,ordering=ordering)
         n = np.array([elem[0] for elem in nm])
         m = np.array([elem[1] for elem in nm])
         return n,m
-
-
-    def __get_precomputed_zernike_polynomials__(self,n:np.ndarray=None,m:np.ndarray=None):
-        """!
-        # get precomputed wavefront functions (unit circle), which can then be weighted:
-        @param[in]
-            n = np.array([elem[0] for elem in nm])
-            m = np.array([elem[1] for elem in nm])
-        """
-        assert isinstance(n,np.ndarray) and isinstance(m,np.ndarray), "No valid input. Stop."
-        self.n = n
-        self.m = m
-        self.Z = ZernPoly.zernike_fun_using_chong_et_al_method(n,m,
-            self.rho[self.pp_mask]/(0.5*self.camera["xp_diameter"]),\
-            self.phi[self.pp_mask],pp_factor = None)
 
 
     def __get_precomputed_zernike_polynomials_from_zemax__(self,jmax):
@@ -742,124 +727,5 @@ class PSF():
         logger.debug("self.physical_pixel_size [µm]" + str(round(self.physical_pixel_size*1e6,4)))
         logger.debug("camera_data[pixelSize]: " + str(round(self.camera_data["pixelSize"]*1e6,4)) + "µm")
         
-
-# outside PSF class definitions -> module functions:
-def binning_for_cupy(PSF_cpu:np.ndarray,pp_cpu:np.ndarray,scaling_factor:float=None,\
-        specs:dict=None,verbose = False,binFactor:list=None,crop_to_size:list=None):
-    """!
-    Bin PSF (CPU implementation - comparison)
-    """
-    grid_mode = True if not PSF_cpu.shape[0] % 2 else False
-    if binFactor is not False:
-        PSF_cpu = ndimage.zoom(PSF_cpu, scaling_factor, output=None, \
-            order=3, mode='constant', cval=0.0, prefilter=True,grid_mode=grid_mode)       
-    if crop_to_size is None:
-        targetsize = specs["camera_data"]["maximum_PSF_size_m"] # 50µm in [m]
-        crop = get_crop(PSF_cpu.shape[0],targetsize_m=targetsize,\
-            pixelsize=specs["camera_data"]["pixelSize"],odd=odd)
-    else:
-        crop = get_crop(PSF_cpu.shape[0],crop_to_size[0])
-        logger.debug("crop_to_size: {}".format(crop_to_size))		
-    if crop is not None:
-        PSF_cpu = PSF_cpu[crop,crop]
-    return PSF_cpu
-
-
-#for speeding up the below code execution by 2-3 times:
-#@jit(nopython=True) # TODO: not working here. 
-def multiply_helper(pp:np.ndarray,W:np.ndarray,wave:float=None):
-    """!
-    Create complex wavefront function (2D)
-    @param[in] pp: <np.ndarray> pupil transmission
-    @param[in] W: <np.ndarray> pupil phase  in [waves] --> wave * 2*np.pi / wave = 2*np.pi
-    @param[in] wave: <float> if W is in [m] instead of [wave], then scale with wave
-    """
-    if wave is None:
-        return np.multiply(pp,np.exp(-1j*(+2*np.pi)*W)) # -1j according to Fringe convention
-    return np.multiply(pp,np.exp(-1j*(+2*np.pi/wave)*W)) # -1j according to Fringe convention
-
-
-#@jit(forceobj=True) # nopython not possible
-def normalize_helper(psf:np.ndarray):
-    """! Normalize the psf."""
-    return psf/np.sum(np.sum(psf)) # normalize to 1 (energy norm, l1)
-
-
-@jit(nopython=True)
-def normalize_c_like_helper(psf:np.ndarray):
-    """! Normalize, compile as C program using jit"""
-    val = 0
-    for i in range(0,psf.shape[0]):
-        for j in range(0,psf.shape[1]):
-            val += psf[i][j]
-    return psf/val # normalize to 1 (energy norm, l1)
-
-
-def get_fft2_helper(pyfftwObj,complex_pupil_array):
-    """! propagate the pupil distribution"""
-    return pyfftwObj(complex_pupil_array)
-
-
-def get_normed_coordinate(yy,center):
-    """! valid formula for both xx,yy"""
-    return 2*(yy/(2*center-1)) -1
-
-
-def get_zernike_ordering_nm_helper(j_max=15,ordering="Fringe",skip_zero=True,verbose=False):
-    """! get_zernike_ordering_nm_helper()
-    @param[in] j_max=15: maximum order for the chosen single indexing scheme
-    @param[in] ordering="Fringe": indexing scheme to be used to produce j_max tuples: "Fringe","OSA/ANSI","Noll"
-    @param[out] nm: list of Zernike polynomials ordered with respect to selected indexing scheme
-    @param[out] coeff: list of zeros matching the number of coefficients (for dummy values, Airy)
-    """
-    nm = []
-    n = 0
-    next_coeff = True
-    if ordering in "OSA/ANSI":
-        # starting with (0,0) -->
-        # [(0,0),(1,-1),(1,1),(2,-2),(2,0),(2,2),(3,-3),(3,-1),(3,1),(3,3),(4,-4),(4,-2),...]
-        while next_coeff:
-            m = -n
-            while next_coeff and (m <= n):
-                if len(nm) < j_max:
-                    if not (skip_zero and ((n==0) and (m==0))): # (n,m) != (0,0)
-                        nm.append((n,m)) # append as many of the same number as variations of m,
-                else: next_coeff = False
-                m += 2
-            n += 1
-        if verbose:
-            print("Selection tuple nm of zernike polynomials (n,m): " + str(nm))
-    elif ordering in "Fringe":
-        # j = 1..3 (position), 4...8 (primary), 9...15 )(secondary), 16...25 (tertiary),
-        # 26...35 (pentafoil) aberration
-        def get_fringe_idx(elem): # get fringe index of tuple (n,m)
-            n = elem[0]
-            m = elem[1]
-            if m == 0:
-                return pow(n/2 + 1,2) # print("m is zero at: " + str((n,m)))
-            return pow((n+abs(m))/2 + 1,2) - 2*abs(m) + (1-np.sign(m))/2 # Fringe indexing scheme
-
-        nm,coeff = get_zernike_ordering_nm_helper(pow(j_max,2),ordering="OSA/ANSI")
-
-        logger.info("Fringe convention used")
-        logger.debug("nm tuple list (n,m) sorted following OSA/ANSI standard: " + str(nm) +"\n")
-        logger.debug("idx: " + str([get_fringe_idx(elem) for elem in nm]) + "\n")
-
-        nm.sort(key=get_fringe_idx) # sort array according to Fringe formula
-
-        if skip_zero:
-            nm = nm[0:j_max-1] # truncate to j_max polynomials after finished computations
-        else:
-            nm = nm[0:j_max]
-        logger.debug("Sorted following Fringe convention: " + str(nm))
-    elif ordering in "Wyant":
-        # j_Fringe-1 --> j_max = j_max -1
-        nm,coeff = get_zernike_ordering_nm_helper(j_max=j_max-1,ordering="Fringe")
-        logger.info("Wyant indexing: same as Fringe ordering except: " + \
-            "j_wyant = j_fringe - 1, j_max_wyant = j_max_fringe -1")
-    elif ordering in "Noll":
-        logger.error("Noll indexing scheme used: option not implemented yet")
-    coeff = list(np.zeros(len(nm)))
-    return nm,coeff
 
 #EOF
