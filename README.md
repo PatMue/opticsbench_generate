@@ -19,6 +19,7 @@ To create kernels from single Zernike Polynomials see the demo:
 python opticsbenchgen/psf_generator.py
 ```
 
+You can then use the generated psf_stack to generate your own corruption and test for it.
 
 
 If you find this useful, please cite: 
