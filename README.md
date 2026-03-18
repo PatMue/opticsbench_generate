@@ -1,5 +1,6 @@
 # opticsbench_user_defined_kernels
 Complementary framework for AROW ICCVW2023 to create user-defined aberations to measure robustness on image datasets or validation images based on Zernike optics descriptions - licensed under GNU General Public license v3.
+<img width="1619" height="677" alt="corruptions" src="https://github.com/user-attachments/assets/72002156-8ff8-437f-9abd-0823aed85c33" />
 
 
 #### OpticsBench kernels:
