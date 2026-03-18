@@ -7,7 +7,7 @@ If you want to generate our **pre-defined corruptions from OpticsBench** please 
 
 The OpticsBench corruptions can be generated from [classification_robustness/opticsbench](https://github.com/PatMue/classification_robustness/tree/main/opticsbench) by simply following [classification_robustness/dataset-generation](https://github.com/PatMue/classification_robustness/tree/main?tab=readme-ov-file#dataset-generation-generate-opticsbench-image-corruptions):
 ```
-python benchmark.py --generate_datasets --database imagenet-1k_val  
+python generate_datasets.py --testdata_path <path_to_images_val_folder>  
 ```
 
 #### User-defined kernels:
